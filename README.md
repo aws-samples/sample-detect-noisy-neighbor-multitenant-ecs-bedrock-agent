@@ -1,93 +1,181 @@
-# sample-detect-noisy-neighbor-multitenant-ecs-bedrock-agent
-
-
-
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://code.aws.dev/proserve/sample-detect-noisy-neighbor-multitenant-ecs-bedrock-agent/sample-detect-noisy-neighbor-multitenant-ecs-bedrock-agent.git
-git branch -M main
-git push -uf origin main
-```
-
-## Integrate with your tools
-
-* [Set up project integrations](https://code.aws.dev/proserve/sample-detect-noisy-neighbor-multitenant-ecs-bedrock-agent/sample-detect-noisy-neighbor-multitenant-ecs-bedrock-agent/-/settings/integrations)
-
-## Collaborate with your team
-
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+# Detect and remediate noisy-neighbor conditions in multi-tenant Amazon ECS with an AI agent on Amazon Bedrock
 
 ## Name
-Choose a self-explaining name for your project.
+
+`sample-detect-noisy-neighbor-multitenant-ecs-bedrock-agent`
+
+Reference implementation for the APG pattern *Detect and remediate
+noisy-neighbor conditions in multi-tenant Amazon ECS using an AI agent with
+Amazon Bedrock*.
 
 ## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+In a multi-tenant SaaS platform where several tenants share one Amazon ECS
+cluster, a traffic surge or a stuck workload from one tenant can consume a
+disproportionate share of cluster resources and degrade every other tenant.
+CloudWatch alarms can tell you that cluster CPU or request volume is high, but
+not *which tenant* is responsible — so an on-call engineer has to investigate
+per-tenant metrics by hand, which is slow while other tenants are degraded.
+
+This project deploys an AI agent (built with the [Strands Agents SDK](https://strandsagents.com/)
+on Amazon Bedrock) that automates that investigation and first-line
+remediation:
+
+1. A CloudWatch alarm on a shared-cluster signal breaches its threshold and
+   delivers the state change to Amazon EventBridge.
+2. EventBridge invokes an AWS Lambda function, which invokes the agent.
+3. The agent runs three tools — **List Tenants** (DynamoDB registry),
+   **Query Metrics** (Amazon Managed Service for Prometheus, PromQL scoped by
+   `tenant_id`), and **Take Action** — to identify the noisy tenant, reason
+   about the cause (traffic spike vs. stuck requests vs. scaling failure), and
+   remediate.
+4. In non-production it scales the affected ECS service directly; in production
+   it publishes a structured proposal to Amazon SNS for human approval.
+
+**What makes it different:** it treats `tenant_id` as a first-class dimension
+and takes *per-tenant* operational action on shared infrastructure — combining
+agentic AI, multi-tenancy, per-tenant observability, and automated remediation.
+
+### Features
+
+- Per-tenant load attribution from AMP via PromQL.
+- Dev-vs-prod guardrail: auto-remediate in dev, SNS approval in prod.
+- Least-privilege IAM, KMS encryption, a Bedrock Guardrail, and digest-pinned,
+  near-zero-CVE Chainguard container images.
+- A self-contained sample two-tenant workload and load generator to demonstrate
+  the flow end to end.
 
 ## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+
+```
+CloudWatch Alarm (CPU / request-count breach)
+        │
+        ▼
+EventBridge Rule ──► AWS Lambda (agent invoker)
+        │
+        ▼
+  Bedrock Agent (Strands Agents SDK)
+   ├── Tool 1: List Tenants   (DynamoDB tenant registry)
+   ├── Tool 2: Query Metrics  (Amazon Managed Prometheus, PromQL by tenant_id)
+   └── Tool 3: Take Action    (ECS UpdateService  |  SNS Publish)
+        │
+        ▼
+  "tenant-a is at 73% of shared cluster CPU vs a 50% baseline.
+   Cause: ~5x steady request-rate spike. Action: scaled svc-a to 8 tasks."
+```
+
+Add the rendered architecture diagram (PNG) and its editable source under
+`docs/` and reference it here before publishing.
+
+## Badges
+
+No CI badges yet. When wired to a pipeline, add build/test and image-scan
+(Trivy) status badges here.
 
 ## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+
+### Requirements
+
+- Python 3.11+ (local development and packaging).
+- AWS CLI v2 and Docker with buildx (to deploy and build the sample image).
+- [Trivy](https://trivy.dev/) (blocking image vulnerability scan).
+- An AWS account with Amazon Bedrock **model access enabled** for the Claude
+  model in the profile's Regions, and Amazon Managed Service for Prometheus
+  available in your Region.
+
+### Local install
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e '.[dev]'
+pytest -q          # runs the unit + offline end-to-end tests (no AWS calls)
+```
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+
+Full, step-by-step deployment (with the purpose of every step) is in
+[`DEPLOYMENT.md`](DEPLOYMENT.md). The phases:
+
+```
+0.5 bootstrap prereqs (VPC + NAT, ECR, S3)   infra/bootstrap.yaml   (sandbox only)
+1   pin + scan base images                   scripts/pin-images.sh
+2   build + scan + push workload image       scripts/scan-image.sh
+3   package + upload agent Lambda            (Linux/arm64 wheels)
+4   deploy CloudFormation stack              infra/template.yaml + params.dev.json
+5   seed tenant registry                     scripts/seed_registry.py
+6   confirm per-tenant metrics in AMP
+7   generate load, exercise the agent
+8   teardown
+```
+
+Trigger the agent end to end (the trivial demo endpoint won't move cluster CPU,
+so force the alarm to exercise the pipeline):
+
+```bash
+aws cloudwatch set-alarm-state \
+  --alarm-name <stack>-shared-cluster-cpu-high \
+  --state-value ALARM --state-reason "end-to-end agent test"
+aws logs tail /aws/lambda/<stack>-agent --follow --since 5m
+```
+
+### Configuration (agent Lambda environment variables)
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `ENV` | `dev` (auto-remediate) or `prod` (SNS approval) | `dev` |
+| `AWS_REGION` | Region for all AWS calls | — |
+| `BEDROCK_MODEL_ID` | Claude on Bedrock (inference-profile ID recommended) | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` |
+| `TENANT_REGISTRY_TABLE` | DynamoDB registry table name | — |
+| `AMP_WORKSPACE_URL` | Full `https://aps-workspaces…` endpoint | — |
+| `SNS_TOPIC_ARN` | Remediation-proposal topic (required in `prod`) | — |
+| `MAX_DESIRED_COUNT` | Hard cap on `UpdateService` desiredCount | `20` |
 
 ## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+
+Open an issue in this repository. For the pattern narrative and background, see
+the corresponding APG pattern. Security decisions and tracked exceptions are
+documented in [`SECURITY-NOTES.md`](SECURITY-NOTES.md).
 
 ## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+
+- Add per-tenant rate limiting as a fourth action (AWS WAF / API Gateway usage
+  plans) for cases where scaling is not the right response.
+- Add incident memory (persist events + resolutions in DynamoDB) so the agent
+  can reference similar past incidents.
+- Re-pin the ADOT collector image once an upstream release ships the fixed
+  `golang.org/x/crypto` and `grpc` versions (see `SECURITY-NOTES.md`).
+- Add a CI pipeline (lint, tests, cfn-lint/checkov, image scan) with status
+  badges.
 
 ## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+Contributions are welcome. Before opening a merge request:
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+```bash
+pip install -e '.[dev]'
+ruff check agent lambda_invoker tests sample_workload scripts
+pytest -q
+cfn-lint infra/*.yaml
+checkov -f infra/template.yaml
+```
+
+Keep IAM least-privilege, pin container images by digest, and do not weaken the
+blocking image scan (`scripts/scan-image.sh`). New tenant-facing behavior should
+come with a test in `tests/`.
 
 ## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+
+Created by AWS Professional Services. Derived from a multi-tenant ECS
+transformation engagement; generalized and sanitized (no customer-specific
+content). Built on the [Strands Agents SDK](https://strandsagents.com/) and the
+AWS SaaS reference architecture for ECS container-image conventions.
 
 ## License
-For open source projects, say how it is licensed.
+
+Licensed under the MIT-0 License. See the [`LICENSE`](LICENSE) file.
 
 ## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+
+Active. Deploys via CloudFormation and has been exercised on a sandbox account
+through the metrics pipeline and agent invocation; unit and offline end-to-end
+tests pass locally. This is reference/sample code, not a production service.
