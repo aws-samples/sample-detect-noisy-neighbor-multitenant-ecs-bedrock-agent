@@ -90,16 +90,30 @@ Resources:
             Principal: { AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" }
             Action: "kms:*"
             Resource: "*"
+          # Service-principal statements are pinned to this stack's resources
+          # (confused-deputy protection). The log-group names and topic name are
+          # deterministic, so the ARNs can be built with !Sub without creating
+          # circular references back to the key.
           - Sid: AllowCloudWatchLogs
             Effect: Allow
             Principal: { Service: !Sub "logs.${AWS::Region}.amazonaws.com" }
             Action: ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey*", "kms:Describe*"]
             Resource: "*"
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${AWS::StackName}/sample-workload"
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-agent"
           - Sid: AllowSns
             Effect: Allow
             Principal: { Service: "sns.amazonaws.com" }
             Action: ["kms:Decrypt", "kms:GenerateDataKey*"]
             Resource: "*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref "AWS::AccountId"
+              ArnLike:
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:${AWS::StackName}-remediation-proposals"
 
   # ---- Tenant registry ----------------------------------------------------
   TenantRegistry:
