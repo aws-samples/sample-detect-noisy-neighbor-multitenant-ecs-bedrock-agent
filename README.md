@@ -40,8 +40,9 @@ agentic AI, multi-tenancy, per-tenant observability, and automated remediation.
 
 - Per-tenant load attribution from AMP via PromQL.
 - Dev-vs-prod guardrail: auto-remediate in dev, SNS approval in prod.
-- Least-privilege IAM, KMS encryption, a Bedrock Guardrail, and digest-pinned,
-  near-zero-CVE Chainguard container images.
+- Least-privilege IAM, KMS encryption, a Bedrock Guardrail, an HTTPS-only ALB
+  (TLS 1.2+), and digest-pinned, patched Amazon Linux 2023 container images
+  pulled from Amazon ECR Public.
 - A self-contained sample two-tenant workload and load generator to demonstrate
   the flow end to end.
 
@@ -129,6 +130,38 @@ aws logs tail /aws/lambda/<stack>-agent --follow --since 5m
 | `AMP_WORKSPACE_URL` | Full `https://aps-workspaces…` endpoint | — |
 | `SNS_TOPIC_ARN` | Remediation-proposal topic (required in `prod`) | — |
 | `MAX_DESIRED_COUNT` | Hard cap on `UpdateService` desiredCount | `20` |
+
+## Security Considerations
+
+This is sample code intended to be reviewed and adapted before any production
+use. Full decisions and tracked exceptions are in
+[`SECURITY-NOTES.md`](SECURITY-NOTES.md).
+
+- **Least-privilege IAM.** The agent role is scoped to specific ARNs — the
+  tenant table, the AMP workspace, the two ECS service ARNs, the SNS topic, and
+  the Bedrock foundation-model / inference-profile ARNs. It does **not** use
+  `ecs:*` or `Resource: "*"`. Scope `bedrock:InvokeModel*` to the model/profile
+  ARNs (across the inference profile's Regions), never `*`.
+- **Human approval in production.** In `prod` the agent never scales directly —
+  it publishes a proposal to Amazon SNS for approval. Autonomous remediation is
+  limited to non-production.
+- **Guarded actions.** `take_action` refuses any `tenant_id` not in the
+  registry, and `desiredCount` is clamped to `[1, MAX_DESIRED_COUNT]`. An Amazon
+  Bedrock Guardrail (prompt-attack filter) constrains model output.
+- **Encryption & transport.** DynamoDB, SNS, CloudWatch Logs, and the Lambda DLQ
+  use KMS; the ALB is HTTPS-only (TLS 1.2+); S3 buckets block public access,
+  enforce TLS, and have access logging.
+- **Supply chain.** Container images are pulled from Amazon ECR Public
+  (Amazon Linux 2023, OS-patched at build), pinned by digest, and gated by a
+  blocking vulnerability scan (`scripts/scan-image.sh`) before push. One tracked
+  third-party exception (the AWS-published ADOT collector image) is documented
+  in `SECURITY-NOTES.md`.
+- **Network.** ECS tasks run in private subnets with no public IP; the ALB is
+  internal. Placing the agent Lambda in-VPC with interface endpoints is a
+  recommended hardening step for locked-down environments.
+- **Report a vulnerability** via the
+  [AWS vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/) —
+  do not open a public issue.
 
 ## Support
 

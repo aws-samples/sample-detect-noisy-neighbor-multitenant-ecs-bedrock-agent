@@ -13,12 +13,10 @@
 #
 set -euo pipefail
 
-# Chainguard Python bases (match the AWS SaaS reference architecture for ECS)
-# plus the ADOT collector sidecar. The two Chainguard tags map to the
-# Dockerfile's PYTHON_BUILDER_IMAGE / PYTHON_RUNTIME_IMAGE args.
+# Amazon Linux 2023 base (Dockerfile BASE_IMAGE) plus the ADOT collector
+# sidecar. Both are hosted on Amazon ECR Public.
 IMAGES=(
-  "cgr.dev/chainguard/python:latest-dev"
-  "cgr.dev/chainguard/python:latest"
+  "public.ecr.aws/amazonlinux/amazonlinux:2023"
   "public.ecr.aws/aws-observability/aws-otel-collector:latest"
 )
 
@@ -47,7 +45,6 @@ done
 
 echo
 echo "Paste the pinned references above:"
-echo "  - the two chainguard/python digests -> sample_workload/Dockerfile"
-echo "    (PYTHON_BUILDER_IMAGE = :latest-dev, PYTHON_RUNTIME_IMAGE = :latest)"
-echo "  - the aws-otel-collector digest      -> infra/params.dev.json (AdotImage)"
+echo "  - the amazonlinux:2023 digest   -> sample_workload/Dockerfile (BASE_IMAGE)"
+echo "  - the aws-otel-collector digest -> infra/params.dev.json (AdotImage)"
 echo "Then: docker build -> scripts/scan-image.sh <image> (blocking) -> docker push."

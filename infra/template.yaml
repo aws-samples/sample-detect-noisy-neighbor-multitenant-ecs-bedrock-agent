@@ -32,6 +32,16 @@ Parameters:
     Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
     Description: Claude inference-profile ID on Amazon Bedrock.
 
+  CertificateArn:
+    Type: String
+    AllowedPattern: ^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate/.+$
+    Description: >-
+      ACM certificate ARN for the ALB HTTPS listener (TLS 1.2+). The ALB is
+      internal, so a public domain / Route 53 record is optional — an
+      ACM Private CA certificate works and is often the simplest fit. Route 53
+      is only needed if you want clients to validate against a friendly
+      hostname.
+
   AppImage:
     Type: String
     Description: Sample workload image, MUST be digest-pinned (repo@sha256:...).
@@ -137,10 +147,10 @@ Resources:
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
+          FromPort: 443
+          ToPort: 443
           CidrIp: !Ref AlbIngressCidr
-          Description: Sample HTTP ingress (use HTTPS/TLS in production)
+          Description: HTTPS ingress (TLS terminated at the ALB)
       SecurityGroupEgress:
         - IpProtocol: tcp
           FromPort: 8080
@@ -213,15 +223,13 @@ Resources:
 
   AlbListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
-    # checkov:skip=CKV_AWS_2: Sample uses HTTP on an INTERNAL ALB to stay
-    #   portable (no ACM cert/domain required to deploy the demo).
-    # checkov:skip=CKV_AWS_103: TLS policy applies only to an HTTPS listener.
-    #   For production, supply an ACM CertificateArn, switch Protocol to HTTPS,
-    #   and set SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06.
     Properties:
       LoadBalancerArn: !Ref Alb
-      Port: 80
-      Protocol: HTTP
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref TenantATargetGroup

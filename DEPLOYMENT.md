@@ -75,16 +75,13 @@ aws cloudformation describe-stacks --stack-name noisy-neighbor-bootstrap \
 ```bash
 scripts/pin-images.sh
 ```
-**Purpose:** turns floating tags (`cgr.dev/chainguard/python:latest-dev`,
-`cgr.dev/chainguard/python:latest`, `aws-otel-collector:latest`) into immutable
-`@sha256:...` digests so the exact bytes can never change under you. The
-Chainguard bases (the same family the AWS SaaS reference architecture for ECS
-uses) are continuously rebuilt and carry near-zero known CVEs, avoiding the
-large set of unfixed Debian OS CVEs that ship in general-purpose `slim` images.
-The base scan here is **informational**; the blocking gate runs against the
-final built image in Step 2.4. Paste the two `chainguard/python` digests into
-`sample_workload/Dockerfile` (`PYTHON_BUILDER_IMAGE` = `:latest-dev`,
-`PYTHON_RUNTIME_IMAGE` = `:latest`) and the ADOT digest into
+**Purpose:** turns floating tags (`public.ecr.aws/amazonlinux/amazonlinux:2023`,
+`aws-otel-collector:latest`) into immutable `@sha256:...` digests so the exact
+bytes can never change under you. Both bases come from Amazon ECR Public;
+Amazon Linux 2023 is AWS-owned and continuously patched (the Dockerfile also
+runs `dnf update`). The base scan here is **informational**; the blocking gate
+runs against the final built image in Step 2.4. Paste the `amazonlinux:2023`
+digest into `sample_workload/Dockerfile` (`BASE_IMAGE`) and the ADOT digest into
 `infra/params.dev.json` (`AdotImage`).
 
 ---
@@ -116,9 +113,8 @@ docker build -t <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/noisy-neighbor-sampl
   sample_workload
 ```
 **Purpose:** produces the container the two tenant ECS services run. The
-multi-stage, non-root, read-only-rootfs Dockerfile keeps the runtime image
-minimal and upgrades base-image Python packages flagged by scanners
-(setuptools, msgpack) to their fixed versions.
+multi-stage, non-root Amazon Linux 2023 Dockerfile patches the OS (`dnf update`)
+and pins `setuptools` to a fixed version in the app venv.
 
 ### Step 2.4 — Scan the built image (blocking gate)
 ```bash
@@ -192,6 +188,7 @@ Edit `infra/params.dev.json`, replacing every `REPLACE*` value:
 | `Environment` | `dev` = auto-scale; `prod` = SNS approval only. Governs the agent's remediation behaviour. |
 | `VpcId`, `PrivateSubnetIds`, `PublicSubnetIds` | Where the ALB and ECS tasks run. Tasks in private subnets, ALB in public subnets. |
 | `AlbIngressCidr` | The only CIDR allowed to reach the ALB. Never `0.0.0.0/0` (the pattern rejects that shape). |
+| `CertificateArn` | ACM certificate ARN for the ALB HTTPS listener (TLS 1.2+). ALB is internal, so Route 53 / a public domain is **optional** — an ACM Private CA cert is often the simplest fit. |
 | `BedrockModelId` | The Claude inference-profile the agent reasons with. |
 | `AppImage` | The digest-pinned workload image from Step 2.3. |
 | `AdotImage` | The digest-pinned ADOT collector image from Step 1.1. |
@@ -277,14 +274,22 @@ instrumentation before proceeding.
 
 ### Step 7.1 — Generate a noisy-neighbor condition
 ```bash
+# Target the certificate's hostname if you set up Route 53; otherwise hit the
+# ALB DNS name and skip cert verification for the demo (see note).
 python sample_workload/loadgen/generate_load.py \
-  --url http://$ALB \
+  --url https://<alb-domain-or-alb-dns> \
   --noisy-tenant tenant-a --noisy-rps 200 \
   --quiet-tenant tenant-b --quiet-rps 10 --seconds 180
 ```
-**Purpose:** drives disproportionate traffic at `tenant-a` so cluster CPU
-crosses the alarm threshold and one tenant is clearly the noisy neighbor.
-(Run from a host with network reach to the internal ALB.)
+**Purpose:** drives disproportionate traffic at `tenant-a` so one tenant is
+clearly the noisy neighbor. Run from a host with network reach to the internal
+ALB. TLS notes: if the cert's domain resolves to the ALB (Route 53), clients
+validate normally; if you used an ACM Private CA or are hitting the raw ALB DNS
+name, the hostname won't match a public CA, so for the demo either trust the
+private CA or disable verification (`curl -k`) — do this only as a manual local
+step, never in shipped code. Also: the demo endpoint is I/O-bound, so it may not
+push cluster CPU past the alarm threshold on its own — force the alarm in
+Step 7.2 to exercise the agent.
 
 ### Step 7.2 — Watch the alarm fire and the agent run
 ```bash

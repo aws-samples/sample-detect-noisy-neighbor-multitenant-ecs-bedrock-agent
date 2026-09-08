@@ -154,13 +154,55 @@ Resources:
             ]
           }
 
+  # ---- S3 access-log bucket (self-logging) --------------------------------
+  LogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-logs-${AWS::AccountId}"
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      VersioningConfiguration: { Status: Enabled }
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      # Self-log by literal name to avoid a circular dependency on !Ref.
+      LoggingConfiguration:
+        DestinationBucketName: !Sub "${AWS::StackName}-logs-${AWS::AccountId}"
+        LogFilePrefix: self/
+
+  LogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref LogBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt LogBucket.Arn
+              - !Sub "${LogBucket.Arn}/*"
+            Condition:
+              Bool: { "aws:SecureTransport": false }
+          - Sid: AllowS3ServerAccessLogging
+            Effect: Allow
+            Principal: { Service: logging.s3.amazonaws.com }
+            Action: "s3:PutObject"
+            Resource: !Sub "${LogBucket.Arn}/*"
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref "AWS::AccountId" }
+
   # ---- S3 bucket for the agent Lambda artifact ----------------------------
   ArtifactBucket:
     Type: AWS::S3::Bucket
-    # checkov:skip=CKV_AWS_18: Access logging needs a separate log bucket; out
-    #   of scope for a sandbox artifact bucket.
-    # checkov:skip=CKV_AWS_144: Cross-region replication is unnecessary for a
-    #   throwaway build artifact.
     Properties:
       BucketName: !Sub "${AWS::StackName}-artifacts-${AWS::AccountId}"
       VersioningConfiguration: { Status: Enabled }
@@ -173,6 +215,9 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LogBucket
+        LogFilePrefix: artifact/
 
   ArtifactBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -189,7 +234,7 @@ Resources:
               - !GetAtt ArtifactBucket.Arn
               - !Sub "${ArtifactBucket.Arn}/*"
             Condition:
-              Bool: { "aws:SecureTransport": "false" }
+              Bool: { "aws:SecureTransport": false }
 
 Outputs:
   VpcId:

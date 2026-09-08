@@ -21,16 +21,22 @@ import urllib.request
 
 
 def _fire(url: str, tenant_id: str, work_ms: int) -> None:
+    target = f"{url.rstrip('/')}/orders"
+    # Only http/https are ever valid for this load generator; reject anything
+    # else (file:, ftp:, custom schemes) before opening the URL.
+    if not target.startswith(("http://", "https://")):
+        raise ValueError(f"refusing non-http(s) URL: {target!r}")
     body = f'{{"items": 1, "work_ms": {work_ms}}}'.encode()
     req = urllib.request.Request(
-        f"{url.rstrip('/')}/orders",
+        target,
         data=body,
         headers={"Content-Type": "application/json", "X-Tenant-Id": tenant_id},
         method="POST",
     )
     # Best-effort: a dropped request under load is expected and uninteresting.
+    # Scheme is validated above, so the audited open is safe.
     with contextlib.suppress(Exception):
-        urllib.request.urlopen(req, timeout=5).read()
+        urllib.request.urlopen(req, timeout=5).read()  # nosec B310
 
 
 def _run_tenant(url: str, tenant_id: str, rps: int, seconds: int, work_ms: int) -> None:

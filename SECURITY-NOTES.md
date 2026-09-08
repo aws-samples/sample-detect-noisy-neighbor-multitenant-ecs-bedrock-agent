@@ -13,46 +13,35 @@ about container images therefore concern a demo prop, not the shipped agent.
 
 ---
 
-## 1. Container base images — Chainguard
+## 1. Container base images — Amazon Linux 2023 (Amazon ECR Public)
 
-**Decision:** the sample workload builds on Chainguard Python
-(`cgr.dev/chainguard/python:latest-dev` builder → `:latest` distroless runtime),
-matching the AWS SaaS reference architecture for ECS
-(`aws-samples/saas-reference-architecture-ecs`, which runs on
-`cgr.dev/chainguard/node` + `nginx`).
+**Decision:** the sample workload builds on Amazon Linux 2023
+(`public.ecr.aws/amazonlinux/amazonlinux:2023`), a multi-stage build that
+installs Python 3.11, runs `dnf update` to apply the latest patches, and drops
+to a non-root user in the runtime stage.
 
-**Why:** the general-purpose `python:3.13-slim` (Debian 13.6) base carried 54
-HIGH/CRITICAL OS CVEs (util-linux, perl, sqlite, ncurses, systemd) with **no
-upstream fix available**. Chainguard images are continuously rebuilt against
-Wolfi and carry near-zero known CVEs, resolving those at the source rather than
-chasing unfixed Debian packages.
+**Why:** the base is AWS-owned, continuously patched, and hosted on Amazon ECR
+Public — satisfying the container-image guideline that images come from an
+approved (non-external) registry, which an earlier Chainguard (`cgr.dev`) base
+did not. AL2023 keeps CVE exposure low while remaining registry-compliant.
 
 **Controls:**
-- Bases pinned by digest (`scripts/pin-images.sh` resolves them).
+- Base pinned by digest (`scripts/pin-images.sh` resolves it).
 - Final built image is gated by `scripts/scan-image.sh` (blocking on
   HIGH/CRITICAL + secrets) before push.
-- Runtime is distroless, non-root (uid 65532), read-only-friendly.
+- Runtime patches the OS (`dnf update`), runs as a non-root user, and copies
+  only the app venv from the builder stage.
 
 ---
 
-## 2. Bundled Python packages (setuptools, msgpack)
+## 2. Bundled Python package (setuptools)
 
-**Finding:** base Python images shipped `setuptools 70.3.0` (CVE-2025-47273) and
-`msgpack 1.1.2` (GHSA-6v7p-g79w-8964), both HIGH.
+**Finding:** the venv's seeded `setuptools` can carry CVE-2025-47273 (HIGH).
 
-**Resolution:** the Dockerfile builder pins both to patched floors
-(`setuptools>=78.1.1`, `msgpack>=1.2.1`) inside the app venv. **Fully fixed** —
-enforced by `scan-image.sh` (no `--ignore-unfixed`, so a fixable CVE cannot
-ship).
-
-**Confirmed (2026-09-06):** the pinned Chainguard **runtime** base
-(`cgr.dev/chainguard/python@sha256:1f37785e…`) scans **0/0** (wolfi + python-pkg).
-The two HIGH findings (`setuptools 70.3.0`, `msgpack 1.1.2`) exist **only in the
-`-dev` builder** image and are build-time only — they are not copied into the
-runtime image (only the app venv is), and the venv pins them to patched floors.
-Pinned digests:
-- builder `cgr.dev/chainguard/python@sha256:b626eb5b…` (`:latest-dev`)
-- runtime `cgr.dev/chainguard/python@sha256:1f37785e…` (`:latest`)
+**Resolution:** the Dockerfile builder pins `setuptools>=78.1.1` inside the app
+venv. **Fully fixed** — enforced by `scan-image.sh` (no `--ignore-unfixed`, so
+a fixable CVE cannot ship). Run `scripts/scan-image.sh <image>` after building
+to confirm the final image is clean before pushing.
 
 ---
 
@@ -85,15 +74,16 @@ release.
 
 ---
 
-## 4. CloudFormation checkov skips (4)
+## 4. CloudFormation checkov skips (2)
 
-`checkov` reports 61 pass / 0 fail / 4 skips on `infra/template.yaml`. Each skip
-is inline in the template with justification:
+`checkov` reports 85 pass / 0 fail / 2 skips across `infra/`. The ALB now uses
+an HTTPS listener (TLS 1.2+) with a required ACM certificate, and the bootstrap
+S3 buckets have access logging enabled — so those are no longer skips. The two
+remaining skips are inline with justification:
 
 | Check | Resource | Why skipped |
 |---|---|---|
-| CKV_AWS_2, CKV_AWS_103 | ALB listener | Sample uses HTTP on an **internal** ALB to stay portable (no ACM cert/domain required to deploy the demo). Production: supply an ACM cert, switch to HTTPS, `SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06`. |
-| CKV_AWS_91 | ALB | Access logging needs a dedicated S3 log bucket with its own lifecycle. Left to the adopter; enable `access_logs.s3.*` in production. |
+| CKV_AWS_91 | ALB | Access logging needs a dedicated S3 log bucket wired cross-stack from the bootstrap stack. Left to the adopter; enable `access_logs.s3.*` in production. |
 | CKV_AWS_117 | Agent Lambda | Calls Bedrock/DynamoDB/ECS/SNS/AMP over public AWS endpoints. In-VPC placement needs interface endpoints per service — a deploy-time networking decision. Add `VpcConfig` + endpoints for a locked-down prod. |
 
 ---
