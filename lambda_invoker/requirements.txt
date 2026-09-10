@@ -1,0 +1,6 @@
+# Locked at deploy time (milestone 2) to specific versions + hashes.
+boto3
+botocore
+strands-agents
+pydantic
+requests

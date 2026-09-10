@@ -1,0 +1,21 @@
+{
+  "TENANT_REGISTRY_TABLE": {
+    "note": "Seed with: python scripts/seed_registry.py --table noisy-neighbor-dev-tenant-registry  --file infra/seed-tenants.json",
+    "tenants": [
+      {
+        "tenant_id": "tenant-a",
+        "cluster_name": "noisy-neighbor-dev-shared-cluster",
+        "service_name": "noisy-neighbor-dev-svc-a",
+        "tier": "standard",
+        "baseline_share": 0.5
+      },
+      {
+        "tenant_id": "tenant-b",
+        "cluster_name": "noisy-neighbor-dev-shared-cluster",
+        "service_name": "noisy-neighbor-dev-svc-b",
+        "tier": "premium",
+        "baseline_share": 0.5
+      }
+    ]
+  }
+}

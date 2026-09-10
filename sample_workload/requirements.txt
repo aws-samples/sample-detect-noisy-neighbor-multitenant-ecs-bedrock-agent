@@ -1,0 +1,6 @@
+# Pin exact versions + hashes at build time (scripts/pin-images.sh documents the
+# equivalent for base images). Ranges here are resolved and locked by CI.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+prometheus-client>=0.20
+pydantic>=2.6

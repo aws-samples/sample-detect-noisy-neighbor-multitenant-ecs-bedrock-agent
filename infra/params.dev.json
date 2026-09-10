@@ -1,0 +1,15 @@
+[
+  { "ParameterKey": "Environment", "ParameterValue": "dev" },
+  { "ParameterKey": "VpcId", "ParameterValue": "vpc-REPLACE" },
+  { "ParameterKey": "PrivateSubnetIds", "ParameterValue": "subnet-REPLACEa,subnet-REPLACEb" },
+  { "ParameterKey": "PublicSubnetIds", "ParameterValue": "subnet-REPLACEc,subnet-REPLACEd" },
+  { "ParameterKey": "AlbIngressCidr", "ParameterValue": "10.20.0.0/16" },
+  { "ParameterKey": "CertificateArn", "ParameterValue": "arn:aws:acm:<REGION>:<ACCOUNT_ID>:certificate/REPLACE" },
+  { "ParameterKey": "BedrockModelId", "ParameterValue": "us.anthropic.claude-sonnet-4-5-20250929-v1:0" },
+  { "ParameterKey": "AppImage", "ParameterValue": "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/<repo>@sha256:REPLACE" },
+  { "ParameterKey": "AdotImage", "ParameterValue": "public.ecr.aws/aws-observability/aws-otel-collector@sha256:7968fb60db6a2390a47ba6a2df029745638486e285c9b2487da1b722d0855a3e" },
+  { "ParameterKey": "LambdaCodeBucket", "ParameterValue": "REPLACE-artifact-bucket" },
+  { "ParameterKey": "LambdaCodeKey", "ParameterValue": "agent/agent-lambda.zip" },
+  { "ParameterKey": "ApprovalEmail", "ParameterValue": "" },
+  { "ParameterKey": "MaxDesiredCount", "ParameterValue": "20" }
+]
